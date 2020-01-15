@@ -17,18 +17,23 @@ public class QueryResultSpawner : MonoBehaviour, UnityCineastApi.QueryResultCall
 
     [SerializeField] private GameObject prefab;
     [SerializeField] private float meshSize = 0.5f;
-    [SerializeField] private bool deleteExisting = true;
+    [SerializeField] private Collider deletionArea;
+    [SerializeField] private float deletionAreaRange = 0.1f;
     [SerializeField] private SpawnSpot[] spawnSpots = new SpawnSpot[0];
 
     public void OnCineastQueryCompleted(List<UnityCineastApi.QueryResult> results)
     {
-        if(deleteExisting)
+        if(deletionArea != null)
         {
             //Delete already existing query result objects
             var existing = FindObjectsOfType<QueryResultObject>();
             foreach(QueryResultObject queryResultObject in existing)
             {
-                Destroy(queryResultObject.gameObject);
+                var pos = queryResultObject.gameObject.transform.position;
+                if((deletionArea.ClosestPoint(pos) - pos).magnitude < deletionAreaRange)
+                {
+                    Destroy(queryResultObject.gameObject);
+                }
             }
         }
 

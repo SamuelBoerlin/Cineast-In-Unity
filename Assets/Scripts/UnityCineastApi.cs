@@ -8,14 +8,40 @@ using UnityEngine;
 
 public class UnityCineastApi : MonoBehaviour
 {
-    [SerializeField] private bool run = false;
-
-    [SerializeField] private TextAsset queryModel;
+    [System.Serializable]
+    private struct TestSettings
+    {
+        public bool runTest;
+        public TextAsset testModel;
+        public bool debugLog;
+    }
+    [SerializeField] private TestSettings testSettings = new TestSettings();
 
     [SerializeField] private string cineastApiUrl = "http://192.168.56.101:4567/";
-    [SerializeField] private string cineastFileUrl = "http://192.168.56.101:8000/";
 
-    [SerializeField] private bool debugLog = false;
+    [SerializeField] private string[] queryCategories = { "sphericalharmonicshigh" };
+
+    [System.Serializable]
+    public struct ObjectDownloaderSettings
+    {
+        public bool useCineastServer;
+        public string hostBaseUrl;
+        public string hostThumbnailsPath;
+        public string hostContentPath;
+        public bool useDescriptorContentPath;
+        public string defaultSuffix;
+    }
+    [SerializeField]
+    private ObjectDownloaderSettings objectDownloaderSettings = new ObjectDownloaderSettings
+    {
+        useCineastServer = false, //Cineast's thumbnail resolver is currently broken
+        hostBaseUrl = "http://192.168.56.101:8000/",
+        hostThumbnailsPath = "thumbnails/:o/:s:x",
+        hostContentPath = "data/3d/:p",
+        useDescriptorContentPath = false,
+        defaultSuffix = "jpg"
+    };
+
     [SerializeField] private GameObject[] callbackObjects = new GameObject[0];
 
     public interface QueryResultCallback
@@ -127,49 +153,54 @@ public class UnityCineastApi : MonoBehaviour
 
     void Update()
     {
-        if (run)
+        if (testSettings.runTest)
         {
-            run = false;
+            testSettings.runTest = false;
 
-            Debug.Log("Start Similarity Query");
-
-            var query = new Complete3DSimilarityQuery(cineastApiUrl);
-            var downloader = query.ObjectDownloader;
-            downloader.HostBaseUrl = cineastFileUrl;
-            downloader.HostContentPath = "data/3d/:p";
-            downloader.HostThumbnailsPath = "thumbnails/:o/:s:x";
-            downloader.UseCineastServer = false; //Cineast's thumbnail resolver is currently broken
-
-            var categories = new List<string>
+            using (Stream stream = new MemoryStream(testSettings.testModel.bytes))
             {
-                "sphericalharmonicshigh"
-            };
-
-            string testModelJson;
-            using (Stream stream = new MemoryStream(queryModel.bytes))
-            {
-                testModelJson = ObjToJsonConverter.Convert(stream);
+                StartQuery(ObjToJsonConverter.Convert(stream));
             }
-
-            StartCoroutine(CreateQueryCoroutine(query, categories, testModelJson, results =>
-            {
-                foreach (GameObject obj in callbackObjects)
-                {
-                    QueryResultCallback[] callbacks = obj.GetComponents<QueryResultCallback>();
-                    foreach (QueryResultCallback callback in callbacks)
-                    {
-                        if (callback != null)
-                        {
-                            callback.OnCineastQueryCompleted(results);
-                        }
-                    }
-                }
-            }, debugLog));
         }
     }
 
+    public void StartQuery(string modelJson)
+    {
+        if (testSettings.debugLog)
+        {
+            Debug.Log("Start Similarity Query");
+        }
+
+        var query = new Complete3DSimilarityQuery(cineastApiUrl);
+        var downloader = query.ObjectDownloader;
+
+        downloader.UseCineastServer = objectDownloaderSettings.useCineastServer;
+        downloader.HostBaseUrl = objectDownloaderSettings.hostBaseUrl;
+        downloader.HostThumbnailsPath = objectDownloaderSettings.hostThumbnailsPath;
+        downloader.HostContentPath = objectDownloaderSettings.hostContentPath;
+        downloader.UseDescriptorContentPath = objectDownloaderSettings.useDescriptorContentPath;
+        downloader.DefaultSuffix = objectDownloaderSettings.defaultSuffix;
+
+        var categories = new List<string>(queryCategories);
+
+        StartCoroutine(CreateQueryCoroutine(query, categories, modelJson, results =>
+        {
+            foreach (GameObject obj in callbackObjects)
+            {
+                QueryResultCallback[] callbacks = obj.GetComponents<QueryResultCallback>();
+                foreach (QueryResultCallback callback in callbacks)
+                {
+                    if (callback != null)
+                    {
+                        callback.OnCineastQueryCompleted(results);
+                    }
+                }
+            }
+        }, testSettings.debugLog));
+    }
+
     public delegate void QueryResultCallbackDelegate(List<QueryResult> results);
-    public IEnumerator CreateQueryCoroutine(Complete3DSimilarityQuery query, List<string> categories, string modelJson, QueryResultCallbackDelegate callback, bool log = false)
+    public static IEnumerator CreateQueryCoroutine(Complete3DSimilarityQuery query, List<string> categories, string modelJson, QueryResultCallbackDelegate callback, bool log = false)
     {
         var results = new List<QueryResult>();
 
